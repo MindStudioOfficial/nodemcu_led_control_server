@@ -5,13 +5,15 @@ void setup() {
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
   FastLED.addLeds<WS2812B, DATA_PIN2, GRB>(leds2, NUM_LEDS2);
 
-  readStateEEPROM(24);
-  setRGBfromC1();
-  updateCC();
-  updateTemp();
-  FastLED.setBrightness(prop_brightness);
-
   Serial.begin(115200);
+
+  readStateEEPROM(24);  // read state from EEPROM
+  updateCC();           // set color correction from state
+  updateTemp();         // set color temperature form state
+  FastLED.setBrightness(prop_brightness); // set brightness from state
+  setRGBfromC1();       // set color from c1 if RGB or HSV
+  animate();            // animate rainbows if in mode  
+  updateLEDsDelayed();  // update LEDS
 
   // === CONNECTING TO WIFI ===
 
@@ -19,7 +21,7 @@ void setup() {
   WiFi.begin(ssid, password);
 
   Serial.println("Connecting");
-  // wait for connectiob
+  // wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.println(".");
@@ -65,26 +67,26 @@ void loop() {
     if (message == "getIoTs") // send IOT device info on request
     {
       udp.beginPacket(hostIP, hostPort);
-      char headerbuf[3] = { 'I', 'O', 'T' };
-      char ipbuf[6] = { 'I', 'P', localIP[0], localIP[1], localIP[2], localIP[3] };
+      char headerBuf[3] = { 'I', 'O', 'T' };
+      char ipBuf[6] = { 'I', 'P', localIP[0], localIP[1], localIP[2], localIP[3] };
 
-      uint8_t namel = deviceName.length();
-      char nheadbuf[5] = { 'N', 'A', 'M', 'E', namel };
+      uint8_t nameLen = deviceName.length();
+      char nameHeadBuf[5] = { 'N', 'A', 'M', 'E', nameLen };
 
-      char namebuf[namel + 1];
-      deviceName.toCharArray(namebuf, namel + 1);
+      char nameBuf[nameLen + 1];
+      deviceName.toCharArray(nameBuf, nameLen + 1);
 
-      uint8_t typl = deviceType.length();
-      char theadbuf[4] = { 'T', 'Y', 'P', typl };
-      char typbuf[typl + 1];
-      deviceType.toCharArray(typbuf, typl + 1);
+      uint8_t typeLen = deviceType.length();
+      char typeHeadBuf[4] = { 'T', 'Y', 'P', typeLen };
+      char typeBuf[typeLen + 1];
+      deviceType.toCharArray(typeBuf, typeLen + 1);
 
-      udp.write(headerbuf, 3);
-      udp.write(ipbuf, 6);
-      udp.write(nheadbuf, 5);
-      udp.write(namebuf, namel + 1);
-      udp.write(theadbuf, 4);
-      udp.write(typbuf, typl + 1);
+      udp.write(headerBuf, 3);
+      udp.write(ipBuf, 6);
+      udp.write(nameHeadBuf, 5);
+      udp.write(nameBuf, nameLen + 1);
+      udp.write(typeHeadBuf, 4);
+      udp.write(typeBuf, typeLen + 1);
       if (udp.endPacket() > 0)
         Serial.println("Sent IOTINFO");
     }
@@ -300,21 +302,32 @@ void readStateEEPROM(int len) {
   if (len > 512 || len < 21) {
     return;
   }
-  Serial.println("Reading from EEPROM");
+
   EEPROM.begin(512); // CONTENT: L E D S T A T E mode r1 g1 b1 r2 g2 b2 dir speed cc temp bright
 
   char content[len];
   for (int i = 0; i < len; i++) {
     content[i] = EEPROM.read(i);
-    Serial.println(content[i], DEC);
     delay(10);
   }
 
   EEPROM.end();
+  Serial.println("Read from EEPROM");
+  Serial.flush();
   if (String(content).substring(0, 8) != "LEDSTATE") {
     Serial.println("INVALID EEPROM DATA");
     writeStateEEPROM();
   } else {
+    for (int i = 0; i < len; i++) {
+      Serial.print(content[i], DEC);
+      Serial.print("\t");
+    }
+    Serial.println();
+    for (int i = 0; i < len; i++) {
+      Serial.print(content[i]);
+      Serial.print("\t");
+    }
+    Serial.println();
     if (content[8] == 0) {
       prop_modus = (uint8_t)content[9];
       prop_color_1 = CRGB((uint8_t)content[10], (uint8_t)content[11], (uint8_t)content[12]);
